@@ -70,7 +70,7 @@ function requireAdmin(request, response, next) {
   const [user, password] = decoded.split(':');
 
   if (!expectedUser || !expectedPassword || user !== expectedUser || password !== expectedPassword) {
-    response.set('WWW-Authenticate', 'Basic realm="棒棒堂老师后台"');
+    response.set('WWW-Authenticate', 'Basic realm="Bangbangtang"');
     response.status(401).send('请使用老师账号登录');
     return;
   }
