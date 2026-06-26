@@ -59,6 +59,10 @@ async function ensureSchema() {
       KEY idx_contact (contact)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `);
+  const [statusColumns] = await pool.query(`SHOW COLUMNS FROM \`${databaseName}\`.registrations LIKE 'status'`);
+  if (!statusColumns.length) {
+    await pool.query(`ALTER TABLE \`${databaseName}\`.registrations ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT '待联系' AFTER source`);
+  }
 }
 
 function requireAdmin(request, response, next) {
@@ -123,15 +127,65 @@ app.post('/api/register', async (request, response) => {
   }
 });
 
+app.get('/api/teacher/leads', requireAdmin, async (request, response) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, name, contact, role, grade, need, note, source, status, created_at FROM \`${databaseName}\`.registrations ORDER BY id DESC LIMIT 200`
+    );
+    response.json({
+      ok: true,
+      leads: rows.map((row) => ({
+        id: String(row.id),
+        type: '登记',
+        name: row.name,
+        contact: row.contact,
+        role: row.role,
+        grade: row.grade,
+        need: row.need,
+        note: row.note,
+        source: row.source,
+        status: row.status || '待联系',
+        createdAt: row.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('load teacher leads failed', error.message);
+    response.status(500).json({ ok: false, message: '暂时无法读取资料。' });
+  }
+});
+
+app.post('/api/teacher/status', requireAdmin, async (request, response) => {
+  const id = Number(request.body && request.body.id);
+  const status = request.body && request.body.status;
+  if (!Number.isInteger(id) || id <= 0 || !['待联系', '已联系'].includes(status)) {
+    response.status(400).json({ ok: false, message: '状态更新信息不正确。' });
+    return;
+  }
+  try {
+    const [result] = await pool.execute(
+      `UPDATE \`${databaseName}\`.registrations SET status = ? WHERE id = ?`,
+      [status, id]
+    );
+    if (!result.affectedRows) {
+      response.status(404).json({ ok: false, message: '没有找到这条资料。' });
+      return;
+    }
+    response.json({ ok: true });
+  } catch (error) {
+    console.error('update teacher lead status failed', error.message);
+    response.status(500).json({ ok: false, message: '暂时无法更新状态。' });
+  }
+});
+
 app.get('/teacher', requireAdmin, async (request, response) => {
   try {
-    const [rows] = await pool.query(`SELECT id, name, contact, role, grade, need, note, source, created_at FROM \`${databaseName}\`.registrations ORDER BY id DESC LIMIT 200`);
+    const [rows] = await pool.query(`SELECT id, name, contact, role, grade, need, note, source, status, created_at FROM \`${databaseName}\`.registrations ORDER BY id DESC LIMIT 200`);
     const body = rows.map((row) => `
       <tr>
         <td>${row.id}</td><td>${row.name}</td><td>${row.contact}</td><td>${row.grade}</td>
-        <td>${row.need}</td><td>${row.note}</td><td>${row.source}</td><td>${row.created_at}</td>
+        <td>${row.need}</td><td>${row.status}</td><td>${row.note}</td><td>${row.source}</td><td>${row.created_at}</td>
       </tr>`).join('');
-    response.type('html').send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>棒棒堂老师后台</title><style>body{margin:0;padding:24px;background:#f7f1e7;color:#26352f;font:14px/1.5 system-ui,sans-serif}h1{font-size:24px}p{color:#68736b}table{width:100%;border-collapse:collapse;background:#fff}th,td{padding:10px;border:1px solid #e9dfce;text-align:left;vertical-align:top}th{background:#294b3e;color:#fff}@media(max-width:700px){body{padding:12px}table{font-size:12px}}</style></head><body><h1>棒棒堂书房｜家长登记</h1><p>共 ${rows.length} 条记录，最新记录在最上面。</p><table><thead><tr><th>编号</th><th>称呼</th><th>电话/微信</th><th>年级</th><th>想了解</th><th>补充情况</th><th>来源</th><th>提交时间</th></tr></thead><tbody>${body || '<tr><td colspan="8">还没有登记。</td></tr>'}</tbody></table></body></html>`);
+    response.type('html').send(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>棒棒堂老师后台</title><style>body{margin:0;padding:24px;background:#f7f1e7;color:#26352f;font:14px/1.5 system-ui,sans-serif}h1{font-size:24px}p{color:#68736b}table{width:100%;border-collapse:collapse;background:#fff}th,td{padding:10px;border:1px solid #e9dfce;text-align:left;vertical-align:top}th{background:#294b3e;color:#fff}@media(max-width:700px){body{padding:12px}table{font-size:12px}}</style></head><body><h1>棒棒堂书房｜家长登记</h1><p>共 ${rows.length} 条记录，最新记录在最上面。</p><table><thead><tr><th>编号</th><th>称呼</th><th>电话/微信</th><th>年级</th><th>想了解</th><th>状态</th><th>补充情况</th><th>来源</th><th>提交时间</th></tr></thead><tbody>${body || '<tr><td colspan="9">还没有登记。</td></tr>'}</tbody></table></body></html>`);
   } catch (error) {
     console.error('load registrations failed', error.message);
     response.status(500).send('暂时无法读取资料。');
