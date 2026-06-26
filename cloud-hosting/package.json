@@ -1,0 +1,14 @@
+{
+  "name": "bangbangtang-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "棒棒堂书房家长登记后台",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql2": "^3.12.0"
+  }
+}
